@@ -1,15 +1,22 @@
 #version 130
 
-#define PI radians(180.)
+uniform float iBlockOffset, iVolume, iTexSize, iSampleRate;
+
+float PI = radians(180.);
 float clip(float a) { return clamp(a,-1.,1.); }
 float theta(float x) { return smoothstep(0.,1e-3,clamp(x,0.,1e-3)); }
 float _sin(float a) { return sin(2. * PI * mod(a,1.)); }
 float freqC1(float note){ return 32.7 * pow(2., note/12.); }
 float fhelp(float x) { return 1. + .333*x; } // 1. + .33333*x + .1*x*x + .02381*x*x*x + .00463*x*x*x*x;
 
-#define pat4(a,b,c,d,x) mod(x,1.)<.25 ? a : mod(x,1.)<.5 ? b : mod(x,1.) < .75 ? c : d
+float pat4(float a, float b, float c, float d, float x)
+{
+    return mod(x,1.)<.25 ? a : mod(x,1.)<.5 ? b : mod(x,1.) < .75 ? c : d;
+}
+// #define pat4(a,b,c,d,x) mod(x,1.)<.25 ? a : mod(x,1.)<.5 ? b : mod(x,1.) < .75 ? c : d
 
-#define NTIME 2
+// #define NTIME 2
+int NTIME = 2;
 const float pos_B[2] = float[2](0.,12.);
 const float pos_t[2] = float[2](0.,20.571429);
 const float pos_BPS[1] = float[1](.5833);
@@ -124,11 +131,11 @@ float bandpassBPsaw1(float time, float f, float tL, float vel, float fcenter, fl
 
 float rfloat(int off){return sequence_texture[off];}
 
-#define NTRK 4
-#define NMOD 19
-#define NPTN 5
-#define NNOT 62
-#define NDRM 10
+int NTRK = 4;
+int NMOD = 19;
+int NPTN = 5;
+int NNOT = 62;
+int NDRM = 10;
 
 int trk_sep(int index)      {return int(rfloat(index));}
 int trk_syn(int index)      {return int(rfloat(index+1+1*NTRK));}

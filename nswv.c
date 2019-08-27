@@ -28,6 +28,9 @@ PFNGLLINKPROGRAMPROC glLinkProgram;
 PFNGLUSEPROGRAMPROC glUseProgram;
 PFNGLGETUNIFORMLOCATIONPROC glGetUniformLocation;
 PFNGLUNIFORM1FPROC glUniform1f;
+PFNGLUNIFORM1IPROC glUniform1i;
+PFNGLGENFRAMEBUFFERSPROC glGenFramebuffers;
+PFNGLBINDFRAMEBUFFERPROC glBindFramebuffer;
 
 size_t strlen(const char *str)
 {
@@ -41,6 +44,11 @@ void *memset(void *ptr, int value, size_t num)
 	for(int i=num-1; i>=0; i--)
 		((unsigned char *)ptr)[i] = value;
 	return ptr;
+}
+
+void *malloc(size_t size)
+{
+	return GlobalAlloc(GMEM_ZEROINIT, size);
 }
 
 int WINAPI demo(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine, int nCmdShow)
@@ -114,19 +122,85 @@ int WINAPI demo(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine, in
 	glUseProgram = (PFNGLUSEPROGRAMPROC) wglGetProcAddress("glUseProgram");
     glGetUniformLocation = (PFNGLGETUNIFORMLOCATIONPROC) wglGetProcAddress("glGetUniformLocation");
     glUniform1f = (PFNGLUNIFORM1FPROC) wglGetProcAddress("glUniform1f");
+    glUniform1i = (PFNGLUNIFORM1IPROC) wglGetProcAddress("glUniform1i");
+    glGenFramebuffers = (PFNGLGENFRAMEBUFFERSPROC) wglGetProcAddress("glGenFramebuffers");
+    glBindFramebuffer = (PFNGLBINDFRAMEBUFFERPROC) wglGetProcAddress("glBindFramebuffer");
     
     ShowCursor(FALSE);
+
+    float duration1 = 120;
+    int sample_rate = 44100,
+        texs = 512,
+        block_size = 512*512,
+        nblocks1 = sample_rate * duration1 / block_size + 1,
+        music1_size = nblocks1 * block_size,
+        channels = 2;
+        
+    int snd_framebuffer, snd_texture;
+    glGenFramebuffers(1, &snd_framebuffer);
+    glBindFramebuffer(GL_FRAMEBUFFER, snd_framebuffer);
+
+    glGenTextures(1, &snd_texture);
+	glBindTexture(GL_TEXTURE_2D, snd_texture);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, texs, texs, 0, GL_RGBA, GL_UNSIGNED_BYTE, 0);
     
-    const char * gfx_source = "\
-    #version 130\n\
-    uniform float iTime;\
-    const vec2 iResolution = vec2(1280.,720.);\
-    void main()\
-    {\
-        vec2 uv = gl_FragCoord.xy/iResolution.xy;\
-        vec3 col = 0.5 + 0.5*cos(iTime+uv.xyx+vec3(0,2,4));\
-        gl_FragColor = vec4(col,1.0);\
-    }";
+	float *smusic1 = (float*)malloc(4 * music1_size);
+	short *dest = (short*)smusic1;
+	for (int i = 0; i < 2 * music1_size; ++i)
+		dest[i] = 0;
+    
+#include "sfx.h"
+    int sfx_size = strlen(sfx_source),
+        sfx_handle = glCreateShader(GL_FRAGMENT_SHADER);
+    glShaderSource(sfx_handle, 1, (GLchar **)&sfx_source, &sfx_size);
+    glCompileShader(sfx_handle);
+    
+    int sfx_program = glCreateProgram();
+    glAttachShader(sfx_program, sfx_handle);
+    glLinkProgram(sfx_program);
+    
+    glUseProgram(sfx_program);
+    int sfx_samplerate_location = glGetUniformLocation(sfx_program, "d");
+    int sfx_blockoffset_location = glGetUniformLocation(sfx_program, "a");
+    int sfx_volumelocation = glGetUniformLocation(sfx_program, "b");
+    int sfx_texs_location = glGetUniformLocation(sfx_program, "c");
+    
+    glViewport(0, 0, texs, texs);
+    
+    for (int music_block = 0; music_block < nblocks1; ++music_block)
+	{
+// 		glBindFramebuffer(GL_FRAMEBUFFER, snd_framebuffer);
+// 		glUseProgram(sfx_program);
+
+// 		printf("Rendering SFX block %d/%d -> %le\n", music_block, nblocks1, .5*(float)music_block / (float)nblocks1);
+		double tstart = (double)(music_block*block_size);
+
+		glUniform1f(sfx_volumelocation, 1.);
+		glUniform1f(sfx_samplerate_location, (float)sample_rate);
+		glUniform1f(sfx_blockoffset_location, (float)tstart);
+		glUniform1i(sfx_texs_location, texs);
+
+        glBegin(GL_QUADS);
+        glVertex3f(-1,-1,0);
+        glVertex3f(-1,1,0);
+        glVertex3f(1,1,0);
+        glVertex3f(1,-1,0);
+        glEnd();
+        
+        SwapBuffers(hdc);
+
+		glReadPixels(0, 0, texs, texs, GL_RGBA, GL_UNSIGNED_BYTE, smusic1 + music_block * block_size);
+		glFlush();
+
+		unsigned short *buf = (unsigned short*)smusic1;
+		short *dest = (short*)smusic1;
+        for (int j = 2 * music_block*block_size; j < 2 * (music_block + 1)*block_size; ++j)
+            dest[j] = (buf[j] - (1 << 15));
+	}
+    
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    
+#include "gfx.h"
     int gfx_size = strlen(gfx_source),
         gfx_handle = glCreateShader(GL_FRAGMENT_SHADER);
     glShaderSource(gfx_handle, 1, (GLchar **)&gfx_source, &gfx_size);
@@ -137,7 +211,19 @@ int WINAPI demo(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine, in
     glLinkProgram(gfx_program);
     
     glUseProgram(gfx_program);
-    int gfx_iTime_location = glGetUniformLocation(gfx_program, "iTime");
+    int gfx_iTime_location = glGetUniformLocation(gfx_program, "a");
+    
+    // Play sound
+    HWAVEOUT hWaveOut = 0;
+	int n_bits_per_sample = 16;
+	WAVEFORMATEX wfx = { WAVE_FORMAT_PCM, channels, sample_rate, sample_rate*channels*n_bits_per_sample / 8, channels*n_bits_per_sample / 8, n_bits_per_sample, 0 };
+	waveOutOpen(&hWaveOut, WAVE_MAPPER, &wfx, 0, 0, CALLBACK_NULL);
+
+    WAVEHDR header;
+	header.lpData = smusic1;
+	header.dwBufferLength = 4 * music1_size;
+	waveOutPrepareHeader(hWaveOut, &header, sizeof(WAVEHDR));
+	waveOutWrite(hWaveOut, &header, sizeof(WAVEHDR));
     
     float t_now = 0.;
     
@@ -155,6 +241,10 @@ int WINAPI demo(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine, in
             TranslateMessage( &msg );
             DispatchMessageA( &msg );
         }
+        
+        static MMTIME MMTime = { TIME_SAMPLES, 0};
+		waveOutGetPosition(hWaveOut, &MMTime, sizeof(MMTIME));
+		t_now = ((double)MMTime.u.sample)/( 44100.0);
         
         glUniform1f(gfx_iTime_location, t_now);
         

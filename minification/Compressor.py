@@ -18,13 +18,31 @@ import GLSLLexer130
 
 def compress(source):
     #return source
+    
+    identifier_list = []
+    small_identifiers = [ chr(ord('a') + i) for i in range(26) ]
+    small_identifiers += [ chr(ord('A') + i) for i in range(26) ]
+    small_identifiers += [ a + b for a in small_identifiers for b in small_identifiers ]
+    print(small_identifiers)
+    
     newcode = ""
     lexer = GLSLLexer130.GLSLLexer130(source)
     token = lexer.token()
     while token != None:
-        if (token.tokenName != "SINGLELINE_COMMENT") and (token.tokenName != "MULTILINE_COMMENT"):
+        uniform = False
+        
+        if (token.tokenName != "SINGLELINE_COMMENT") and (token.tokenName != "MULTILINE_COMMENT") and (token.tokenName != "IDENTIFIER"):
             newcode += token.tokenData
         if token.tokenName in [ "VOID", "FLOAT", "VEC2", "VEC3", "VEC4", "MAT2", "MAT3", "MAT4", "SAMPLER2D", "UNIFORM", "IN_QUALIFIER", "OUT_QUALIFIER", "INOUT_QUALIFIER", "VOID", "VERSION_DIRECTIVE", "DEFINE_DIRECTIVE", "CONST", "INT", "ELSE", "RETURN" ]:
             newcode += " "
+        #if token.tokenName == "IDENTIFIER": # No minification
+            #newcode += token.tokenData
+        if token.tokenName == "IDENTIFIER":
+            identifier = token.tokenData
+            if not identifier in identifier_list:
+                identifier_list += [ identifier ]
+            ind = identifier_list.index(identifier) 
+            print("ID: ", token.tokenData, ind)
+            newcode += small_identifiers[ind]
         token = lexer.token()
     return newcode
